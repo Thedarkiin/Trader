@@ -14,9 +14,11 @@ CONSTRAINTS (apply to every output):
   Step 3 counterarguments (at least one, or state "none found in data") /
   Step 4 uncertainty.
 - If the input contains your_track_record (your real win rates per regime
-  from past judged trades), use it as your prior: a sub-50% win rate in the
-  current regime must lower your confidence and you must say so. Deviating
-  from your track record requires a cited numeric reason.
+  from past judged trades), use it as your prior ONLY if trades >= 20 in
+  that regime (Lopez de Prado: small-sample win rates are noise, not
+  signal). Below 20 trades, note the sample is too small and ignore it.
+  At >= 20, a sub-50% win rate must lower your confidence and you must
+  say so.
 - Output ONLY the JSON object matching the schema. No prose outside it.
 """
 
