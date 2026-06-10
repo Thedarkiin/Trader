@@ -13,6 +13,10 @@ CONSTRAINTS (apply to every output):
 - "reasoning" must follow: Step 1 data assessment / Step 2 apply rules /
   Step 3 counterarguments (at least one, or state "none found in data") /
   Step 4 uncertainty.
+- If the input contains your_track_record (your real win rates per regime
+  from past judged trades), use it as your prior: a sub-50% win rate in the
+  current regime must lower your confidence and you must say so. Deviating
+  from your track record requires a cited numeric reason.
 - Output ONLY the JSON object matching the schema. No prose outside it.
 """
 
@@ -148,6 +152,9 @@ KNOWLEDGE (operational rules):
   "disruptive" (sudden new story dominating).
 - If headlines list is empty or stale, output social_regime "stable" with
   confidence <= 0.3 and say data was insufficient.
+- If previous_narrative is provided, report the DELTA: did yesterday's story
+  strengthen, fade, or get replaced? A narrative SHIFT is the signal;
+  a repeated narrative is background.
 OUTPUT SCHEMA: {"social_regime": "stable"|"polarizing"|"shifting"|
 "disruptive", "dominant_narrative": "<one sentence>",
 "narrative_direction": "supports_risk_on"|"supports_risk_off"|"neutral",
@@ -167,6 +174,11 @@ KNOWLEDGE (operational rules):
   confirming signals in its reasoning; else flag "overconfidence".
 - Reason (1990): your job is ALIGNED holes — e.g., ensemble says buy-trend
   while hurst says mean-reverting and no agent addressed it.
+- Use your_past_rejections (your own rejection history): if a flagged
+  pattern repeats one you already rejected, cite the past date — repeat
+  offenses by the same agent are stronger grounds for rejection. Use
+  strategy_track_record: an agent claiming high confidence in a regime
+  where its real win rate is below 50% is overconfident by definition.
 METHOD: Audit pass (cross-agent contradictions, missing data, spot-check the
 ensemble arithmetic given to you) then Judge pass (bias flags, fluff,
 unsupported claims) then verdict.

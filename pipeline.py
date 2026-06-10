@@ -2,6 +2,7 @@
 v1 pipeline (paper trading): regime -> 3 strategies (sequential, early exit)
 -> ensemble + sizing + risk (pure Python) -> Audit+Judge gate -> order.
 Stat-arb (needs pairs data) and Social Change (needs news feed) are v2."""
+import memory
 import prompts
 from llm import AgentError, call_agent, MODEL_CHEAP, MODEL_JUDGE
 
@@ -64,10 +65,21 @@ def risk_check(ensemble: dict, market: dict, equity: float) -> dict:
 def run_cycle(market: dict, equity: float = 100_000.0, news: list = None) -> dict:
     result = {"market": market, "status": "no_trade", "order_intent": None}
 
+    # Memory: judge past trades against today's price, then load what the
+    # system has learned so far (win rates per regime, rejection patterns)
+    memory.update_outcomes(market["last_price"])
+    history = memory.build_context()
+    result["memory_context"] = history
+
     # Phase 0.0 — light: regime classification + social narrative (cheap)
-    regime = call_agent(prompts.REGIME, market, MODEL_CHEAP, 0.2,
+    regime = call_agent(prompts.REGIME,
+                        {"market": market,
+                         "recent_regimes": history["recent_regimes_oldest_first"]},
+                        MODEL_CHEAP, 0.2,
                         required_keys=("regime", "confidence", "reasoning"))
-    social = call_agent(prompts.SOCIOLOGIST, {"headlines": news or []},
+    social = call_agent(prompts.SOCIOLOGIST,
+                        {"headlines": news or [],
+                         "previous_narrative": history["previous_narrative"]},
                         MODEL_CHEAP, 0.2,
                         required_keys=("social_regime", "narrative_direction",
                                        "confidence", "reasoning"))
@@ -96,7 +108,8 @@ def run_cycle(market: dict, equity: float = 100_000.0, news: list = None) -> dic
     # Phase 1 — strategy pool, sequential with early exit
     signals, exit_reason = [], None
     strat_input = {"market": market, "regime": regime, "social": social,
-                   "crowd": result.get("game_theorist")}
+                   "crowd": result.get("game_theorist"),
+                   "your_track_record": history["strategy_win_rates_by_regime"]}
     for name, prompt in STRATEGIES:
         out = call_agent(prompt, strat_input, MODEL_CHEAP, 0.2,
                          required_keys=_STRAT_KEYS)
@@ -124,7 +137,9 @@ def run_cycle(market: dict, equity: float = 100_000.0, news: list = None) -> dic
                "physicist": result.get("physicist"),
                "game_theorist": result.get("game_theorist"),
                "signals": signals, "ensemble": ensemble, "risk": risk,
-               "order_intent": intent}
+               "order_intent": intent,
+               "your_past_rejections": history["recent_judge_rejections"],
+               "strategy_track_record": history["strategy_win_rates_by_regime"]}
     verdict = call_agent(prompts.AUDIT_JUDGE, package, MODEL_JUDGE, 0.0,
                          required_keys=("verdict", "verdict_rationale"))
     result["verdict"] = verdict
