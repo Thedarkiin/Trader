@@ -28,6 +28,15 @@ def place_order(intent: dict) -> dict:
     return {"status": "submitted", "order_id": str(order.id), **intent}
 
 
+def close_position(symbol: str) -> dict:
+    if not LIVE:
+        return {"status": "log_only", "action": "close", "symbol": symbol}
+    from alpaca.trading.client import TradingClient
+    client = TradingClient(API_KEY, SECRET, paper=True)
+    order = client.close_position(symbol)
+    return {"status": "closed", "symbol": symbol, "order_id": str(order.id)}
+
+
 def get_equity() -> float:
     if not LIVE:
         return 100_000.0
