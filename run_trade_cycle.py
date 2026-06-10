@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 import broker
-from data import fetch_market_data
+from data import fetch_market_data, fetch_news
 from pipeline import run_cycle
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -20,7 +20,8 @@ def main():
     record = {"time": datetime.now(timezone.utc).isoformat()}
     try:
         symbol = os.getenv("SYMBOL", "SPY")
-        result = run_cycle(fetch_market_data(symbol), broker.get_equity())
+        result = run_cycle(fetch_market_data(symbol), broker.get_equity(),
+                           news=fetch_news(symbol))
         record.update(result)
         if result["status"] == "trade":
             record["order"] = broker.place_order(result["order_intent"])

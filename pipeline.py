@@ -61,19 +61,45 @@ def risk_check(ensemble: dict, market: dict, equity: float) -> dict:
             "sigma5_dollar_loss": round(sigma_5_loss, 2), "blocked": blocked}
 
 
-def run_cycle(market: dict, equity: float = 100_000.0) -> dict:
+def run_cycle(market: dict, equity: float = 100_000.0, news: list = None) -> dict:
     result = {"market": market, "status": "no_trade", "order_intent": None}
 
-    # Phase 0 — regime (1 call; physicist metrics are pre-computed inputs)
+    # Phase 0.0 — light: regime classification + social narrative (cheap)
     regime = call_agent(prompts.REGIME, market, MODEL_CHEAP, 0.2,
                         required_keys=("regime", "confidence", "reasoning"))
-    result["regime"] = regime
+    social = call_agent(prompts.SOCIOLOGIST, {"headlines": news or []},
+                        MODEL_CHEAP, 0.2,
+                        required_keys=("social_regime", "narrative_direction",
+                                       "confidence", "reasoning"))
+    result["regime"], result["social"] = regime, social
+
+    # Phase 0.1 — heavy confirmation, only if the light regime is uncertain
+    if regime["confidence"] < 0.7 or regime["regime"] == "indeterminate":
+        physicist = call_agent(prompts.PHYSICIST, market, MODEL_JUDGE, 0.2,
+                               required_keys=("regime_verdict",
+                                              "suggested_regime", "confidence",
+                                              "reasoning"))
+        result["physicist"] = physicist
+        if physicist["regime_verdict"] == "veto":
+            regime = {"regime": physicist["suggested_regime"],
+                      "confidence": min(physicist["confidence"], 0.7),
+                      "reasoning": "physicist veto: " + physicist["reasoning"]}
+        elif physicist["regime_verdict"] == "confirm":
+            regime["confidence"] = min(regime["confidence"] + 0.15, 0.9)
+
+        game = call_agent(prompts.GAME_THEORIST, market, MODEL_JUDGE, 0.2,
+                          required_keys=("crowd_state", "contrarian_risk",
+                                         "confidence", "reasoning"))
+        result["game_theorist"] = game
+        result["regime"] = regime
 
     # Phase 1 — strategy pool, sequential with early exit
     signals, exit_reason = [], None
+    strat_input = {"market": market, "regime": regime, "social": social,
+                   "crowd": result.get("game_theorist")}
     for name, prompt in STRATEGIES:
-        out = call_agent(prompt, {"market": market, "regime": regime},
-                         MODEL_CHEAP, 0.2, required_keys=_STRAT_KEYS)
+        out = call_agent(prompt, strat_input, MODEL_CHEAP, 0.2,
+                         required_keys=_STRAT_KEYS)
         out["strategy"] = name
         signals.append(out)
         exit_reason = early_exit(signals)
@@ -94,8 +120,11 @@ def run_cycle(market: dict, equity: float = 100_000.0) -> dict:
     intent = {"side": side, "notional": risk["notional"], "symbol": market["symbol"]}
 
     # Phase 3 — Audit+Judge gate (1 call, temp 0)
-    package = {"market": market, "regime": regime, "signals": signals,
-               "ensemble": ensemble, "risk": risk, "order_intent": intent}
+    package = {"market": market, "regime": regime, "social": social,
+               "physicist": result.get("physicist"),
+               "game_theorist": result.get("game_theorist"),
+               "signals": signals, "ensemble": ensemble, "risk": risk,
+               "order_intent": intent}
     verdict = call_agent(prompts.AUDIT_JUDGE, package, MODEL_JUDGE, 0.0,
                          required_keys=("verdict", "verdict_rationale"))
     result["verdict"] = verdict
