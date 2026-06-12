@@ -46,7 +46,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
-          SYMBOLS: "SPY,IWM,GLD,TLT"
+          SYMBOLS: "SPY,QQQ,IWM,GLD,TLT"
         run: python run_trade_cycle.py
 
       - name: Persist memory (positions, outcomes, trade log)
