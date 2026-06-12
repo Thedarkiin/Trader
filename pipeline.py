@@ -18,6 +18,13 @@ STRATEGIES = [
 
 _STRAT_KEYS = ("strategy", "direction", "confidence", "regime_suitability", "reasoning")
 
+# The judge attests each checkpoint; Python derives the verdict (all must pass).
+JUDGE_CHECKPOINTS = (
+    "contradictions_addressed", "numbers_verified", "no_banned_language",
+    "confidence_supported", "counterarguments_real", "not_repeat_offense",
+    "track_record_respected",
+)
+
 
 def compute_ensemble(signals: list) -> dict:
     """Doc formula: no_trade agents abstain (excluded from both sums)."""
@@ -235,12 +242,19 @@ def run_cycle(market: dict, equity: float = 100_000.0, news: list = None) -> dic
                "order_intent": intent,
                "your_past_rejections": history["recent_judge_rejections"],
                "strategy_track_record": history["strategy_win_rates_by_regime"]}
-    verdict = call_agent(prompts.AUDIT_JUDGE, package, MODEL_JUDGE, 0.0,
-                         required_keys=("verdict", "verdict_rationale"))
-    result["verdict"] = verdict
-    if verdict["verdict"] == "PASS+UPHOLD":
+    audit = call_agent(prompts.AUDIT_JUDGE, package, MODEL_JUDGE, 0.0,
+                       required_keys=("checklist", "verdict_rationale"))
+    # Verdict computed in code from the checklist: the judge attests each
+    # checkpoint; it cannot hand-wave a PASS. Missing/malformed item = fail.
+    failed = [name for name in JUDGE_CHECKPOINTS
+              if not isinstance(audit["checklist"].get(name), dict)
+              or audit["checklist"][name].get("pass") is not True]
+    audit["verdict"] = "FAIL+REJECT" if failed else "PASS+UPHOLD"
+    audit["failed_checkpoints"] = failed
+    result["verdict"] = audit
+    if failed:
+        result["status"] = "rejected"
+    else:
         result["status"] = "trade"
         result["order_intent"] = intent
-    else:
-        result["status"] = "rejected"
     return result

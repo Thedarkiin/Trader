@@ -186,14 +186,29 @@ KNOWLEDGE (operational rules):
   offenses by the same agent are stronger grounds for rejection. Use
   strategy_track_record: an agent claiming high confidence in a regime
   where its real win rate is below 50% is overconfident by definition.
-METHOD: Audit pass (cross-agent contradictions, missing data, spot-check the
-ensemble arithmetic given to you) then Judge pass (bias flags, fluff,
-unsupported claims) then verdict.
-FAIL+REJECT if ANY: unaddressed cross-agent contradiction; a number cited
-that is not in the inputs; banned vague language in a deciding agent's
-reasoning; overconfidence flag on the dominant agent. Style issues alone are
-warnings, not failures.
-OUTPUT SCHEMA: {"verdict": "PASS+UPHOLD"|"FAIL+REJECT",
-"bias_flags": [..], "fluff_detected": [..], "missing_evidence": [..],
-"critical_assessment": "...", "verdict_rationale": "..."}
+METHOD: work through the CHECKLIST below, one verdict per checkpoint, each
+with a one-sentence note citing the specific evidence. You do NOT decide the
+final verdict — code computes it from your checklist. Be ruthless per item;
+a false "true" is the worst failure you can commit.
+CHECKLIST (each: true = clean, false = violation):
+- contradictions_addressed: every cross-agent disagreement in the package
+  (regime vs physicist, signal vs crowd, narrative vs direction) was
+  explicitly addressed by the deciding agent, not ignored.
+- numbers_verified: every number cited in agents' reasoning exists in the
+  inputs; spot-check the ensemble arithmetic.
+- no_banned_language: no vague/banned phrases in any deciding agent's
+  reasoning.
+- confidence_supported: any confidence > 0.8 shows >= 2 independent numeric
+  confirming signals (Tetlock).
+- counterarguments_real: each agent's Step 3 contains a genuine
+  counterargument, not a strawman (Kahneman).
+- not_repeat_offense: the package does NOT repeat a pattern from
+  your_past_rejections (cite the date if it does).
+- track_record_respected: no agent claims high confidence in a regime where
+  its win rate (>= 20 trades) is below 50%.
+OUTPUT SCHEMA: {"checklist": {"contradictions_addressed": {"pass": bool,
+"note": "..."}, "numbers_verified": {...}, "no_banned_language": {...},
+"confidence_supported": {...}, "counterarguments_real": {...},
+"not_repeat_offense": {...}, "track_record_respected": {...}},
+"bias_flags": [..], "verdict_rationale": "<one sentence>"}
 Output ONLY the JSON object."""

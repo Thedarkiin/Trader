@@ -65,12 +65,33 @@ pipeline.call_agent = fake_agent([
      "regime_suitability": 0.9, "reasoning": "m"},   # over-confident: must clamp to 0.8
     {"strategy": "volatility", "direction": "buy", "confidence": 0.7,
      "regime_suitability": 0.8, "reasoning": "v"},
-    {"verdict": "PASS+UPHOLD", "verdict_rationale": "ok"},
+    {"checklist": {k: {"pass": True, "note": "ok"}
+                   for k in pipeline.JUDGE_CHECKPOINTS},
+     "bias_flags": [], "verdict_rationale": "all checkpoints clean"},
 ])
 r3 = pipeline.run_cycle(m3)
 mom = next(s for s in r3["signals"] if s["strategy"] == "momentum")
 assert mom["confidence"] == 0.8, mom["confidence"]
 assert any("clamped" in n for n in r3["coherence_adjustments"])
 assert r3["status"] == "trade" and r3["order_intent"]["side"] == "buy"
-print("case 3 OK: clamp applied, trade flows to judge and passes")
+assert r3["verdict"]["verdict"] == "PASS+UPHOLD"
+print("case 3 OK: clamp applied, trade flows to judge, all checkpoints pass")
+
+# Case 4: judge fails one checkpoint -> code must reject, whatever the prose says
+checklist = {k: {"pass": True, "note": "ok"} for k in pipeline.JUDGE_CHECKPOINTS}
+checklist["numbers_verified"] = {"pass": False, "note": "cited adx 31, input has 30"}
+pipeline.call_agent = fake_agent([
+    {"regime": "trending_bull", "confidence": 0.8, "fat_tails_flag": False, "reasoning": "r"},
+    {"social_regime": "stable", "narrative_direction": "neutral",
+     "confidence": 0.3, "reasoning": "s", "dominant_narrative": None},
+    {"strategy": "momentum", "direction": "buy", "confidence": 0.8,
+     "regime_suitability": 0.9, "reasoning": "m"},
+    {"strategy": "volatility", "direction": "buy", "confidence": 0.6,
+     "regime_suitability": 0.8, "reasoning": "v"},
+    {"checklist": checklist, "bias_flags": [], "verdict_rationale": "bad number"},
+])
+r4 = pipeline.run_cycle(dict(m3))
+assert r4["status"] == "rejected"
+assert r4["verdict"]["failed_checkpoints"] == ["numbers_verified"]
+print("case 4 OK: one failed checkpoint forces rejection in code")
 print("ALL OK")
