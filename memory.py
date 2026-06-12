@@ -26,6 +26,11 @@ def _load_log() -> list:
         return [json.loads(l) for l in f if l.strip()]
 
 
+def _first_sentence(text: str, cap: int = 160) -> str:
+    head = text.split(". ")[0]
+    return (head[:cap] + "…") if len(head) > cap else head
+
+
 def _load_outcomes() -> dict:
     if os.path.exists(OUTCOMES):
         with open(OUTCOMES, encoding="utf-8") as f:
@@ -80,11 +85,14 @@ def build_context() -> dict:
         for cell in strat.values():
             cell["win_rate"] = round(cell["wins"] / cell["trades"], 2)
 
-    # regime history (last 10) + judge rejection patterns (last 5)
+    # regime history (last 10) + judge rejection patterns (last 5).
+    # Rejections are distilled to flags + first sentence: agents need the
+    # LESSON, not the judge's full prose (token cost in every strategy call).
     regimes = [r["regime"]["regime"] for r in records if "regime" in r]
     rejections = [{"time": r["time"][:10],
                    "bias_flags": r["verdict"].get("bias_flags", []),
-                   "rationale": r["verdict"].get("verdict_rationale", "")[:300]}
+                   "lesson": _first_sentence(
+                       r["verdict"].get("verdict_rationale", ""))}
                   for r in records
                   if r.get("verdict", {}).get("verdict") == "FAIL+REJECT"][-5:]
     last_social = next((r["social"] for r in reversed(records) if r.get("social")),

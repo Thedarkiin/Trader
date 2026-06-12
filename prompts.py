@@ -12,7 +12,9 @@ CONSTRAINTS (apply to every output):
 - Mixed evidence => low confidence or no_trade. Abstaining is never penalized.
 - "reasoning" must follow: Step 1 data assessment / Step 2 apply rules /
   Step 3 counterarguments (at least one, or state "none found in data") /
-  Step 4 uncertainty.
+  Step 4 uncertainty. Each step ONE terse sentence citing numbers — no
+  restating definitions or input values beyond the ones driving the call.
+  Total reasoning under 80 words; longer is fluff and will be flagged.
 - If the input contains your_track_record (your real win rates per regime
   from past judged trades), use it as your prior ONLY if trades >= 20 in
   that regime (Lopez de Prado: small-sample win rates are noise, not
