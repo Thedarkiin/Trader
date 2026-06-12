@@ -33,11 +33,13 @@ def _load_outcomes() -> dict:
     return {}
 
 
-def update_outcomes(current_price: float) -> None:
+def update_outcomes(symbol: str, current_price: float) -> None:
     """Mark past trades as win/loss once HORIZON_DAYS newer cycles exist.
+    Only judges trades on THIS symbol against this price — comparing a trade
+    to another symbol's price fabricates outcomes and poisons win-rate stats.
     Entry price = market last_price at decision time (approximation until
     fill-price tracking is added)."""
-    records = _load_log()
+    records = [r for r in _load_log() if r.get("symbol") == symbol]
     outcomes = _load_outcomes()
     trades = [(i, r) for i, r in enumerate(records) if r.get("status") == "trade"]
     for i, r in trades:
@@ -50,7 +52,8 @@ def update_outcomes(current_price: float) -> None:
         entry = r["market"]["last_price"]
         side = r["order_intent"]["side"]
         ret = (current_price / entry - 1) * (1 if side == "buy" else -1)
-        outcomes[key] = {"regime": r["regime"]["regime"], "side": side,
+        outcomes[key] = {"symbol": symbol,
+                         "regime": r["regime"]["regime"], "side": side,
                          "entry": entry, "exit_ref": current_price,
                          "return_pct": round(ret * 100, 2),
                          "win": ret > 0,

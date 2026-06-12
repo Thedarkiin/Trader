@@ -33,10 +33,85 @@ def compute_ensemble(signals: list) -> dict:
             "n_active": len(active)}
 
 
+def regime_hard_check(market: dict, regime: dict) -> str | None:
+    """ADX/Hurst contradiction rule from the regime prompt, enforced in code:
+    adx > 25 (trending) while hurst < 0.45 (mean-reverting) is structurally
+    contradictory — the regime must be indeterminate, never a coin-flip pick."""
+    if market["adx"] > 25 and market["hurst"] < 0.45 \
+            and regime["regime"] != "indeterminate":
+        note = (f"forced indeterminate: adx {market['adx']} > 25 contradicts "
+                f"hurst {market['hurst']} < 0.45 (was {regime['regime']})")
+        regime["regime"] = "indeterminate"
+        regime["confidence"] = min(regime["confidence"], 0.6)
+        return note
+    return None
+
+
+def hard_gate(name: str, market: dict, regime: dict) -> str | None:
+    """Deterministic strategy pre-filters — the pure arithmetic entry rules
+    from the prompts, run in code BEFORE the LLM call. A gated strategy costs
+    no tokens and cannot fumble its own threshold. Returns block reason."""
+    r = regime["regime"]
+    if name == "momentum" and r in ("ranging", "indeterminate"):
+        return f"regime '{r}': momentum requires a trending regime"
+    if name == "mean_reversion":
+        bb = market["bb_position"]
+        if 0.05 < bb < 0.95:
+            return (f"bb_position {bb} inside bands "
+                    f"(entry requires < 0.05 or > 0.95)")
+        if r != "ranging":
+            return f"regime '{r}': reversion entry requires ranging"
+    if name == "volatility" and market["atr_avg20_ratio"] < 1.1:
+        return (f"atr_avg20_ratio {market['atr_avg20_ratio']} < 1.1: "
+                f"no breakout case")
+    return None
+
+
+def enforce_coherence(signals: list, regime: dict, physicist: dict | None,
+                      game: dict | None) -> list[str]:
+    """Deterministic cross-agent consistency layer (Python, not LLM prose).
+    No agent may be more confident in a trade than the system is in its own
+    read of the market. Mutates signals in place; returns adjustment notes."""
+    notes = []
+    cap = regime["confidence"]
+    if physicist and physicist.get("regime_verdict") != "confirm":
+        if physicist["confidence"] < cap:
+            cap = physicist["confidence"]
+            notes.append(f"regime confidence capped at {cap} "
+                         f"(physicist verdict: {physicist['regime_verdict']})")
+        regime["confidence"] = min(regime["confidence"], cap)
+    if regime.get("fat_tails_flag") or (physicist or {}).get("phase_transition_risk"):
+        if cap > 0.5:
+            cap = 0.5
+            notes.append("confidence capped at 0.5 (fat tails / phase transition risk)")
+    for s in signals:
+        if s["direction"] not in DIRECTION_NUM:
+            continue
+        if s["regime_suitability"] <= 0.3:
+            notes.append(f"{s['strategy']}: active signal voided, "
+                         f"regime_suitability {s['regime_suitability']} <= 0.3")
+            s["direction"] = "no_trade"
+            continue
+        if s["confidence"] > cap:
+            notes.append(f"{s['strategy']}: confidence {s['confidence']} "
+                         f"clamped to regime cap {cap}")
+            s["confidence"] = round(cap, 2)
+        risk = (game or {}).get("contrarian_risk") or 0.0
+        if risk >= 0.6:
+            new = round(s["confidence"] * (1 - risk), 2)
+            notes.append(f"{s['strategy']}: confidence {s['confidence']} -> {new} "
+                         f"(contrarian_risk {risk})")
+            s["confidence"] = new
+    return notes
+
+
 def early_exit(signals: list) -> str | None:
-    if len(signals) < 2:
+    # hard-gated abstains are deterministic and say nothing about the
+    # remaining strategies — only real LLM opinions may form a consensus
+    voiced = [s for s in signals if not s.get("hard_gated")]
+    if len(voiced) < 2:
         return None
-    a, b = signals[0], signals[1]
+    a, b = voiced[0], voiced[1]
     if (a["direction"] == b["direction"] == "no_trade"
             and a["confidence"] > 0.8 and b["confidence"] > 0.8):
         return "consensus_no_trade"
@@ -67,7 +142,7 @@ def run_cycle(market: dict, equity: float = 100_000.0, news: list = None) -> dic
 
     # Memory: judge past trades against today's price, then load what the
     # system has learned so far (win rates per regime, rejection patterns)
-    memory.update_outcomes(market["last_price"])
+    memory.update_outcomes(market["symbol"], market["last_price"])
     history = memory.build_context()
     result["memory_context"] = history
 
@@ -84,6 +159,8 @@ def run_cycle(market: dict, equity: float = 100_000.0, news: list = None) -> dic
                         required_keys=("social_regime", "narrative_direction",
                                        "confidence", "reasoning"))
     result["regime"], result["social"] = regime, social
+    result["regime_hard_check"] = [n for n in [regime_hard_check(market, regime)]
+                                   if n]
 
     # Phase 0.1 — heavy confirmation, only if the light regime is uncertain
     if regime["confidence"] < 0.7 or regime["regime"] == "indeterminate":
@@ -104,6 +181,11 @@ def run_cycle(market: dict, equity: float = 100_000.0, news: list = None) -> dic
                                          "confidence", "reasoning"))
         result["game_theorist"] = game
         result["regime"] = regime
+        # a physicist veto/confirm rewrote the regime — re-assert the
+        # ADX/Hurst contradiction rule on the final version
+        recheck = regime_hard_check(market, regime)
+        if recheck:
+            result["regime_hard_check"].append("post-physicist " + recheck)
 
     # Phase 1 — strategy pool, sequential with early exit
     signals, exit_reason = [], None
@@ -111,15 +193,28 @@ def run_cycle(market: dict, equity: float = 100_000.0, news: list = None) -> dic
                    "crowd": result.get("game_theorist"),
                    "your_track_record": history["strategy_win_rates_by_regime"]}
     for name, prompt in STRATEGIES:
-        out = call_agent(prompt, strat_input, MODEL_CHEAP, 0.2,
-                         required_keys=_STRAT_KEYS)
-        out["strategy"] = name
-        signals.append(out)
+        gate = hard_gate(name, market, regime)
+        if gate:
+            # deterministic abstain: full confidence, no LLM call spent
+            signals.append({"strategy": name, "direction": "no_trade",
+                            "confidence": 1.0, "regime_suitability": 0.0,
+                            "target_price": None, "stop_loss": None,
+                            "hard_gated": True,
+                            "reasoning": "hard gate (code): " + gate})
+        else:
+            out = call_agent(prompt, strat_input, MODEL_CHEAP, 0.2,
+                             required_keys=_STRAT_KEYS)
+            out["strategy"] = name
+            signals.append(out)
         exit_reason = early_exit(signals)
         if exit_reason:
             break
     result["signals"] = signals
     result["early_exit"] = exit_reason
+
+    # Phase 1.5 — coherence gate: enforce cross-agent confidence caps in code
+    result["coherence_adjustments"] = enforce_coherence(
+        signals, regime, result.get("physicist"), result.get("game_theorist"))
 
     # Phase 2 — ensemble + sizing + risk (pure Python)
     ensemble = compute_ensemble(signals)

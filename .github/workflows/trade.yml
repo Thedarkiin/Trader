@@ -1,0 +1,59 @@
+# Daily trade cycle in the cloud — PC no longer needs to be on.
+# Two crons cover US daylight-saving shifts; the guard step keeps only the
+# one that lands at 09:xx ET, so the cycle runs exactly once per market day.
+name: daily-trade-cycle
+
+on:
+  schedule:
+    - cron: "40 13 * * 1-5"   # 09:40 ET while US is on EDT (Mar-Nov)
+    - cron: "40 14 * * 1-5"   # 09:40 ET while US is on EST (Nov-Mar)
+  workflow_dispatch: {}        # manual run button for testing
+
+concurrency:
+  group: trade-cycle
+  cancel-in-progress: false
+
+permissions:
+  contents: write              # to commit memory/ back
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guard — only proceed at 09:xx ET on scheduled runs
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] && \
+             [ "$(TZ=America/New_York date +%H)" != "09" ]; then
+            echo "SKIP=1" >> "$GITHUB_ENV"
+            echo "Wrong-season duplicate cron firing; skipping."
+          fi
+
+      - uses: actions/setup-python@v5
+        if: env.SKIP != '1'
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        if: env.SKIP != '1'
+        run: pip install -r requirements.txt
+
+      - name: Run trade cycle
+        if: env.SKIP != '1'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          SYMBOLS: "SPY,IWM,GLD,TLT"
+        run: python run_trade_cycle.py
+
+      - name: Persist memory (positions, outcomes, trade log)
+        if: env.SKIP != '1'
+        run: |
+          git config user.name "trade-bot"
+          git config user.email "trade-bot@users.noreply.github.com"
+          git add memory
+          git diff --cached --quiet || git commit -m "memory: cycle $(date -u +%Y-%m-%d)"
+          git push
