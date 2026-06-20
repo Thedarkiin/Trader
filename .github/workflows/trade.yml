@@ -22,12 +22,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Guard — only proceed at 09:xx ET on scheduled runs
+      - name: Guard — run once per market day (delay-proof seasonal dedupe)
+        # GitHub's cron fires hours late, so we must NOT gate on the execution
+        # wall-clock hour (the old "must be 09 ET" check skipped every run).
+        # Dedupe the two seasonal crons by which schedule fired vs. whether NY
+        # is currently on EDT or EST — robust to arbitrary execution delay.
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ] && \
-             [ "$(TZ=America/New_York date +%H)" != "09" ]; then
-            echo "SKIP=1" >> "$GITHUB_ENV"
-            echo "Wrong-season duplicate cron firing; skipping."
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            SEASON=$(TZ=America/New_York date +%Z)      # EDT (summer) or EST (winter)
+            SCHED="${{ github.event.schedule }}"
+            if { [ "$SEASON" = "EDT" ] && [ "$SCHED" != "40 13 * * 1-5" ]; } || \
+               { [ "$SEASON" = "EST" ] && [ "$SCHED" != "40 14 * * 1-5" ]; }; then
+              echo "SKIP=1" >> "$GITHUB_ENV"
+              echo "Off-season duplicate cron ($SCHED during $SEASON); skipping."
+            fi
           fi
 
       - uses: actions/setup-python@v5
