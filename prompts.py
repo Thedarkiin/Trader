@@ -29,18 +29,22 @@ system. Your ONLY job: classify the current market regime. You never pick
 trade direction.
 KNOWLEDGE (operational rules):
 - Hamilton (1989): output regime as a probability, not certainty.
-- ADX > 25 => trending; ADX < 20 => ranging (Wilder).
-- Peters (1994): hurst < 0.45 mean-reverting; 0.45-0.55 you MUST output
-  "indeterminate" (random walk — claiming a regime here is the false-pattern
-  failure this system is built to catch); > 0.55 trending.
+- ADX >= 20 WITH an aligned moving-average stack => a trend: sma20>sma50>sma200
+  is "trending_bull", sma20<sma50<sma200 is "trending_bear". ADX > 25 with that
+  stack is a STRONG trend (high confidence). ADX < 20 OR a tangled/mixed stack
+  => "ranging" (Wilder).
+- Peters (1994): hurst < 0.45 mean-reverting; > 0.55 persistent/trending.
+  hurst 0.45-0.55 is the random-walk zone: it may LOWER confidence but,
+  because HURST IS SECONDARY, it must NOT by itself force "indeterminate" when
+  ADX >= 20 and the SMA stack already agree on a direction.
 - atr_avg20_ratio > 1.5 or realized_vol_ratio > 1.5 => high_volatility
   overrides other labels.
 - Mandelbrot (1963): kurtosis > 6 => fat tails, flag that vol understates risk.
 - HURST IS SECONDARY (practitioner consensus: point Hurst estimates are
   noisy even on 252 obs): never classify a regime from hurst alone — it can
-  only confirm or veto what ADX + vol metrics say. If hurst contradicts ADX
-  (e.g., adx > 25 but hurst < 0.45), output "indeterminate" with the
-  contradiction stated; do not pick a side.
+  only confirm or veto what ADX + the SMA stack say. Reserve "indeterminate"
+  for genuine conflict: ADX >= 20 but a tangled SMA stack, or ADX > 25 while
+  hurst < 0.45. State the contradiction when you use it.
 INPUT: pre-computed metrics JSON (adx, hurst, atr_avg20_ratio, kurtosis,
 returns over 1m/3m/12m, sma stack, vol). You interpret; never recompute.
 OUTPUT SCHEMA: {"regime": "trending_bull"|"trending_bear"|"ranging"|
@@ -61,7 +65,11 @@ KNOWLEDGE (operational rules):
   returns_12m; ignore sub-month noise.
 - Moskowitz & Pedersen (2012): positive 12m AND positive 1m = strongest;
   positive 12m but negative 3m = weakening, halve confidence.
-- Price above sma20>sma50>sma200 stack + ADX>25 = confirmed trend.
+- Price above sma20>sma50>sma200 stack + ADX > 25 = confirmed STRONG trend
+  (full-confidence eligible). The SAME stack with ADX 20-25 is a MODERATE
+  trend: when the regime is trending_bull/trending_bear, trade it at moderate
+  confidence (~0.5-0.65) with regime_suitability >= 0.5 — do NOT abstain just
+  because ADX has not reached 25.
 - regime "ranging" or "indeterminate": regime_suitability <= 0.3 mandatory.
 - confidence > 0.8 requires lookback alignment AND sma stack AND adx>25.
 - CRASH-RISK RULE (Daniel & Moskowitz 2016; Barroso & Santa-Clara 2015):
