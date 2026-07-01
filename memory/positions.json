@@ -1,9 +1,1 @@
-{
- "SPY": {
-  "side": "buy",
-  "entry": 726.8,
-  "stop": 708.74,
-  "target": 753.89,
-  "cycles_held": 9
- }
-}
+{}
