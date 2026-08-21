@@ -1,1 +1,14 @@
-{}
+{
+ "2026-08-06T16:03:15.213179+00:00": {
+  "symbol": "SPY",
+  "regime": "trending_bull",
+  "side": "buy",
+  "entry": 768.07,
+  "exit_ref": 764.91,
+  "return_pct": -0.41,
+  "win": false,
+  "strategies_active": [
+   "momentum"
+  ]
+ }
+}
