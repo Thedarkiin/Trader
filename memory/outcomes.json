@@ -10,5 +10,17 @@
   "strategies_active": [
    "momentum"
   ]
+ },
+ "2026-10-23T18:00:56.069184+00:00": {
+  "symbol": "GLD",
+  "regime": "ranging",
+  "side": "buy",
+  "entry": 366.41,
+  "exit_ref": 372.54,
+  "return_pct": 1.67,
+  "win": true,
+  "strategies_active": [
+   "mean_reversion"
+  ]
  }
 }
